@@ -224,5 +224,58 @@
 <script src="js/ui.settings.js"></script>
 <script src="js/app.js"></script>
 
+<!-- Service worker registration — kept separate so it always runs
+     even if app scripts have errors. Bump CACHE_NAME in sw.js to trigger
+     an automatic update on next online load. -->
+<script>
+  if ('serviceWorker' in navigator) {
+
+    // Log current SW version to console
+    navigator.serviceWorker.ready.then(reg => {
+      if (reg.active) {
+        const chan = new MessageChannel();
+        chan.port1.onmessage = e => console.log('Commonplace Book —', e.data);
+        reg.active.postMessage({ type: 'GET_VERSION' }, [chan.port2]);
+      }
+    });
+
+    // Register SW — skip waiting immediately when update found, then reload
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed') {
+            newWorker.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      });
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.location.reload();
+      });
+    }).catch(err => console.error('Service worker registration failed:', err));
+
+    // On every online load: fetch sw.js fresh, compare CACHE_NAME to stored
+    // version, clear caches and hard reload if changed
+    if (navigator.onLine) {
+      fetch('./sw.js', { cache: 'no-store' })
+        .then(r => r.text())
+        .then(text => {
+          const match = text.match(/const CACHE_NAME = '(.+?)'/);
+          if (!match) return;
+          const latest = match[1];
+          const stored = localStorage.getItem('sw_version');
+          if (stored && stored !== latest) {
+            localStorage.setItem('sw_version', latest);
+            caches.keys()
+              .then(keys => Promise.all(keys.map(k => caches.delete(k))))
+              .then(() => window.location.reload(true));
+          } else {
+            localStorage.setItem('sw_version', latest);
+          }
+        }).catch(() => {});
+    }
+  }
+</script>
+
 </body>
 </html>
