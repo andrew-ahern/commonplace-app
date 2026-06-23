@@ -19,10 +19,6 @@ const uiNewEntry = {
   tagTypes: ['note', 'quote', 'marginalium'],
   activeType: 'note',
 
-  // Ref types that have a "Published in" secondary ref field
-  primaryRefTypes:   ['novel', 'novella', 'short_story', 'poem', 'play', 'essay', 'speech'],
-  secondaryRefTypes: ['book', 'other'],
-
   // Per-type ref selector state
   refState: {
     quote:       { manual: false, selectedId: null, selectedRefType: 'novel', sourceState: { manual: false, selectedId: null } },
@@ -196,157 +192,25 @@ const uiNewEntry = {
     return 1;
   },
 
-  // Build manual ref fields for selected ref type
+  // Build manual ref fields using uiRefForm — single source of truth for form HTML
   buildManualRefFields(entryType) {
     const refType   = document.getElementById(`${entryType}-ref-type-select`).value;
-    const schema    = SCHEMAS.ref_types[refType];
     const container = document.getElementById(`${entryType}-ref-manual-fields`);
 
-    // Filter out source_id/source_text — handled by "Published in" field
-    const fields = Object.keys(schema.fields)
-      .filter(f => f !== 'source_id' && f !== 'source_text')
-      .map(field => `
-        <div class="field" style="margin-top:6px;">
-          <label style="font-size:12px; color:var(--muted);">${field}</label>
-          <input type="text" class="ref-manual-input" name="ref_manual_${field}"
-                 style="margin-top:2px;">
-        </div>
-      `).join('');
+    // idPrefix for "Published in" field: entryType + "-entry" to avoid ID conflicts
+    const pubPrefix = `${entryType}-entry`;
+    container.innerHTML = uiRefForm.buildRefFormHtml(refType, pubPrefix)
+      .replace(/<div class="card form-card">/, '')
+      .replace(/<\/div>\s*$/, '');
 
-    // Add "Published in" field for primary ref types
-    const publishedIn = this.primaryRefTypes.includes(refType)
-      ? this.buildPublishedInHtml(entryType, refType)
-      : '';
-
-    container.innerHTML = fields + publishedIn;
-
-    // Register "Published in" handlers if needed
-    if (this.primaryRefTypes.includes(refType)) {
+    // Register "Published in" handlers if this is a primary ref type
+    if (uiRefForm.primaryRefTypes.includes(refType)) {
       this.refState[entryType].sourceState = { manual: false, selectedId: null };
-      this.registerEntrySourceHandlers(entryType, refType);
-    }
-  },
-
-  // Generate "Published in" HTML for entry form
-  buildPublishedInHtml(entryType, refType) {
-    const secondaryTypeOptions = this.secondaryRefTypes
-      .map(rt => `<option value="${rt}">${SCHEMAS.ref_types[rt].label}</option>`)
-      .join('');
-
-    return `
-      <div class="field" style="margin-top:6px;" id="${entryType}-entry-source-field">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-          <label style="font-size:12px; color:var(--muted);">Published in</label>
-          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-            <span style="font-size:11px; color:var(--muted);">Enter manually</span>
-            <div class="toggle-switch" id="${entryType}-entry-source-toggle">
-              <div class="toggle-knob"></div>
-            </div>
-          </label>
-        </div>
-        <div id="${entryType}-entry-source-saved">
-          <input type="text" class="ref-search" id="${entryType}-entry-source-search"
-                 placeholder="Search references…" autocomplete="off" style="font-size:14px;">
-          <div class="ref-dropdown" id="${entryType}-entry-source-dropdown"></div>
-          <input type="hidden" name="ref_source_id">
-        </div>
-        <div id="${entryType}-entry-source-manual" style="display:none;">
-          <select class="ref-type-select" id="${entryType}-entry-source-type-select"
-                  style="font-size:13px;">
-            ${secondaryTypeOptions}
-          </select>
-          <div class="ref-manual-fields" id="${entryType}-entry-source-manual-fields"></div>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:8px;
-                        font-size:12px; color:var(--muted); cursor:pointer;">
-            <input type="checkbox" id="${entryType}-entry-source-save-checkbox"
-                   style="width:14px; height:14px; cursor:pointer;">
-            Save to references
-          </label>
-        </div>
-      </div>
-    `;
-  },
-
-  // Register handlers for entry form "Published in" field
-  registerEntrySourceHandlers(entryType, refType) {
-    const state    = this.refState[entryType].sourceState;
-    const toggle   = document.getElementById(`${entryType}-entry-source-toggle`);
-    const saved    = document.getElementById(`${entryType}-entry-source-saved`);
-    const manual   = document.getElementById(`${entryType}-entry-source-manual`);
-    const search   = document.getElementById(`${entryType}-entry-source-search`);
-    const dropdown = document.getElementById(`${entryType}-entry-source-dropdown`);
-    if (!toggle) return;
-
-    toggle.addEventListener('click', () => {
-      state.manual = !state.manual;
-      toggle.classList.toggle('on', state.manual);
-      saved.style.display  = state.manual ? 'none'  : 'block';
-      manual.style.display = state.manual ? 'block' : 'none';
-      if (state.manual) this.buildEntrySourceFields(entryType);
-    });
-
-    search.addEventListener('focus', () => {
-      this.renderEntrySourceDropdown(entryType, search.value);
-      dropdown.style.display = 'block';
-    });
-
-    search.addEventListener('input', () => {
-      state.selectedId = null;
-      this.renderEntrySourceDropdown(entryType, search.value);
-      dropdown.style.display = 'block';
-    });
-
-    document.addEventListener('click', e => {
-      const field = document.getElementById(`${entryType}-entry-source-field`);
-      if (field && !field.contains(e.target)) dropdown.style.display = 'none';
-    });
-
-    const typeSelect = document.getElementById(`${entryType}-entry-source-type-select`);
-    if (typeSelect) typeSelect.addEventListener('change', () => this.buildEntrySourceFields(entryType));
-  },
-
-  renderEntrySourceDropdown(entryType, query) {
-    const dropdown = document.getElementById(`${entryType}-entry-source-dropdown`);
-    const allRefs  = Object.values(storage.getAllRefs())
-      .filter(r => this.secondaryRefTypes.includes(r.type));
-
-    const ranked = allRefs.map(ref => ({
-      ref, label: refs.getLabel(ref),
-      score: this.matchScore(refs.getLabel(ref), query),
-    })).filter(({ score }) => score > 0 || !query)
-       .sort((a, b) => b.score - a.score);
-
-    const html = ranked.map(({ ref, label }) =>
-      `<div class="ref-option" data-id="${ref.id}"
-            data-label="${this.escapeAttr(label)}">${this.escapeHtml(label)}</div>`
-    ).join('');
-
-    dropdown.innerHTML = html || '<div class="ref-no-results">No references found</div>';
-
-    dropdown.querySelectorAll('.ref-option').forEach(option => {
-      option.addEventListener('click', () => {
-        this.refState[entryType].sourceState.selectedId = option.dataset.id;
-        document.getElementById(`${entryType}-entry-source-search`).value = option.dataset.label;
-        document.querySelector(`#${entryType}-entry-source-field [name="ref_source_id"]`).value = option.dataset.id;
-        dropdown.style.display = 'none';
+      uiRefForm.registerPublishedInHandlers(pubPrefix, this.refState[entryType].sourceState, () => {
+        this.saveDraft(entryType);
+        this.updateDraftIndicator(entryType);
       });
-    });
-  },
-
-  buildEntrySourceFields(entryType) {
-    const typeSelect = document.getElementById(`${entryType}-entry-source-type-select`);
-    const refType    = typeSelect?.value || 'book';
-    const schema     = SCHEMAS.ref_types[refType];
-    const container  = document.getElementById(`${entryType}-entry-source-manual-fields`);
-    if (!container) return;
-
-    container.innerHTML = Object.keys(schema.fields).map(field => `
-      <div class="field" style="margin-top:4px;">
-        <label style="font-size:11px; color:var(--muted);">${field}</label>
-        <input type="text" class="ref-manual-input" name="entry_source_manual_${field}"
-               style="margin-top:2px; font-size:13px;">
-      </div>
-    `).join('');
+    }
   },
 
   // Read the current ref value — for draft saving only, never saves to ref store
@@ -354,23 +218,18 @@ const uiNewEntry = {
     const state = this.refState[entryType];
     if (!state.manual) return state.selectedId || null;
 
-    const refType   = document.getElementById(`${entryType}-ref-type-select`)?.value;
-    const schema    = SCHEMAS.ref_types[refType];
-    const container = document.getElementById(`${entryType}-ref-manual-fields`);
-    if (!schema || !container) return null;
+    const refType  = document.getElementById(`${entryType}-ref-type-select`)?.value;
+    const schema   = SCHEMAS.ref_types[refType];
+    if (!schema) return null;
 
-    const refData    = { type: refType };
-    let   hasContent = false;
-    Object.keys(schema.fields)
+    const pubPrefix = `${entryType}-entry`;
+    const refData   = { type: refType, ...uiRefForm.readFormData(pubPrefix, refType) };
+    const hasContent = Object.keys(schema.fields)
       .filter(f => f !== 'source_id' && f !== 'source_text')
-      .forEach(field => {
-        const input = container.querySelector(`[name="ref_manual_${field}"]`);
-        if (input && input.value.trim()) { refData[field] = input.value.trim(); hasContent = true; }
-      });
+      .some(f => refData[f]);
 
-    // Read secondary ref for draft (never saves)
-    if (this.primaryRefTypes.includes(refType)) {
-      const source = this.readEntrySourceForDraft(entryType);
+    if (uiRefForm.primaryRefTypes.includes(refType) && state.sourceState) {
+      const source = uiRefForm.readSourceForDraft(pubPrefix, state.sourceState);
       if (source) {
         if (typeof source === 'string') refData.source_id   = source;
         else                           refData.source_text = refs.getLabel(source);
@@ -380,56 +239,30 @@ const uiNewEntry = {
     return hasContent ? refData : null;
   },
 
-  readEntrySourceForDraft(entryType) {
-    const state = this.refState[entryType].sourceState;
-    if (!state) return null;
-    if (!state.manual) return state.selectedId || null;
-
-    const typeSelect = document.getElementById(`${entryType}-entry-source-type-select`);
-    const refType    = typeSelect?.value || 'book';
-    const schema     = SCHEMAS.ref_types[refType];
-    const container  = document.getElementById(`${entryType}-entry-source-manual-fields`);
-    if (!schema || !container) return null;
-
-    const refData = { type: refType };
-    let hasContent = false;
-    Object.keys(schema.fields).forEach(field => {
-      const input = container.querySelector(`[name="entry_source_manual_${field}"]`);
-      if (input && input.value.trim()) { refData[field] = input.value.trim(); hasContent = true; }
-    });
-    return hasContent ? refData : null;
-  },
-
-  // Read the ref value for saving an entry — saves to ref store if checkbox checked
+  // Read the ref value for saving — saves to ref store if checkbox checked
   readRefForSave(entryType) {
     const state = this.refState[entryType];
     if (!state.manual) return state.selectedId || null;
 
-    const refType   = document.getElementById(`${entryType}-ref-type-select`)?.value;
-    const schema    = SCHEMAS.ref_types[refType];
-    const container = document.getElementById(`${entryType}-ref-manual-fields`);
-    if (!schema || !container) return null;
+    const refType  = document.getElementById(`${entryType}-ref-type-select`)?.value;
+    const schema   = SCHEMAS.ref_types[refType];
+    if (!schema) return null;
 
-    const refData    = { type: refType };
-    let   hasContent = false;
-    Object.keys(schema.fields)
+    const pubPrefix  = `${entryType}-entry`;
+    const refData    = { type: refType, ...uiRefForm.readFormData(pubPrefix, refType) };
+    const hasContent = Object.keys(schema.fields)
       .filter(f => f !== 'source_id' && f !== 'source_text')
-      .forEach(field => {
-        const input = container.querySelector(`[name="ref_manual_${field}"]`);
-        if (input && input.value.trim()) { refData[field] = input.value.trim(); hasContent = true; }
-      });
+      .some(f => refData[f]);
     if (!hasContent) return null;
 
-    // Attach secondary ref if present
-    if (this.primaryRefTypes.includes(refType)) {
-      const source = this.readEntrySourceForSave(entryType);
+    if (uiRefForm.primaryRefTypes.includes(refType) && state.sourceState) {
+      const source = uiRefForm.readSourceForSave(pubPrefix, state.sourceState);
       if (source) {
         if (typeof source === 'string') refData.source_id   = source;
         else                           refData.source_text = refs.getLabel(source);
       }
     }
 
-    // Save to references if checkbox checked
     const saveCheckbox = document.getElementById(`${entryType}-ref-save-checkbox`);
     if (saveCheckbox && saveCheckbox.checked) {
       const ref    = refs.createRef(refType, refData);
@@ -439,39 +272,11 @@ const uiNewEntry = {
     return refData;
   },
 
-  readEntrySourceForSave(entryType) {
-    const state = this.refState[entryType].sourceState;
-    if (!state) return null;
-    if (!state.manual) return state.selectedId || null;
-
-    const typeSelect = document.getElementById(`${entryType}-entry-source-type-select`);
-    const refType    = typeSelect?.value || 'book';
-    const schema     = SCHEMAS.ref_types[refType];
-    const container  = document.getElementById(`${entryType}-entry-source-manual-fields`);
-    if (!schema || !container) return null;
-
-    const refData = { type: refType };
-    let hasContent = false;
-    Object.keys(schema.fields).forEach(field => {
-      const input = container.querySelector(`[name="entry_source_manual_${field}"]`);
-      if (input && input.value.trim()) { refData[field] = input.value.trim(); hasContent = true; }
-    });
-    if (!hasContent) return null;
-
-    const checkbox = document.getElementById(`${entryType}-entry-source-save-checkbox`);
-    if (checkbox && checkbox.checked) {
-      const ref    = refs.createRef(refType, refData);
-      const result = refs.validateRef(ref);
-      if (result.valid) { storage.saveRef(ref); return ref.id; }
-    }
-    return refData;
-  },
-
   // Reset ref selector to default state
   resetRef(entryType) {
-    const state         = this.refState[entryType];
-    state.selectedId    = null;
-    state.manual        = false;
+    const state = this.refState[entryType];
+    state.selectedId = null;
+    state.manual     = false;
 
     const toggle   = document.getElementById(`${entryType}-manual-toggle`);
     const saved    = document.getElementById(`${entryType}-ref-saved`);
@@ -487,6 +292,10 @@ const uiNewEntry = {
 
     const fields = document.getElementById(`${entryType}-ref-manual-fields`);
     if (fields) fields.innerHTML = '';
+
+    if (state.sourceState) {
+      uiRefForm.resetPublishedIn(`${entryType}-entry`, state.sourceState);
+    }
   },
 
 

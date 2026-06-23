@@ -1,21 +1,18 @@
 /* ============================================================
    ui.settings.js
    Handles all interactions on the Settings screen.
-   Add reference and Browse references open in a centred modal
-   over the blurred settings screen.
+   Ref form building and "Published in" logic delegated to
+   ui.refform.js — any form changes should be made there.
    ============================================================ */
 
 
 const uiSettings = {
 
-  refTypes: Object.keys(SCHEMAS.ref_types),
+  refTypes:    Object.keys(SCHEMAS.ref_types),
   activeRefType: 'novel',
 
-  // Types that have a secondary ref ("Published in") field
-  primaryRefTypes: ['novel', 'novella', 'short_story', 'poem', 'play', 'essay', 'speech'],
-
-  // Allowed types for secondary refs
-  secondaryRefTypes: ['book', 'other'],
+  // sourceState[refType] = { manual, selectedId } for "Published in" field
+  sourceState: {},
 
 
   // --- Initialisation ---
@@ -29,23 +26,23 @@ const uiSettings = {
   // --- Modal helpers ---
 
   registerModalHandlers() {
-    document.getElementById('modal-overlay').addEventListener('click', () => this.closeModal());
-    document.getElementById('modal-close').addEventListener('click', () => this.closeModal());
-    document.getElementById('ref-sheet-close').addEventListener('click', () => this.closeRefSheet());
-    document.getElementById('ref-sheet-overlay').addEventListener('click', () => this.closeRefSheet());
+    document.getElementById('modal-overlay').addEventListener('click',    () => this.closeModal());
+    document.getElementById('modal-close').addEventListener('click',      () => this.closeModal());
+    document.getElementById('ref-sheet-close').addEventListener('click',  () => this.closeRefSheet());
+    document.getElementById('ref-sheet-overlay').addEventListener('click',() => this.closeRefSheet());
   },
 
   openModal(title, bodyHtml) {
     document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-body').innerHTML = bodyHtml;
-    document.getElementById('modal-overlay').style.display = 'block';
-    document.getElementById('settings-modal').style.display = 'block';
+    document.getElementById('modal-body').innerHTML    = bodyHtml;
+    document.getElementById('modal-overlay').style.display    = 'block';
+    document.getElementById('settings-modal').style.display   = 'block';
   },
 
   closeModal() {
-    document.getElementById('modal-overlay').style.display = 'none';
-    document.getElementById('settings-modal').style.display = 'none';
-    this.closeRefSheet(); // also close ref sheet if open
+    document.getElementById('modal-overlay').style.display    = 'none';
+    document.getElementById('settings-modal').style.display   = 'none';
+    this.closeRefSheet();
   },
 
 
@@ -98,7 +95,8 @@ const uiSettings = {
             <div style="font-weight:500;">Clear all data on this device</div>
             <div style="font-size:13px; color:var(--muted);">Permanently deletes all local entries, references and settings</div>
           </div>
-          <button type="button" class="btn" id="btn-clear-data" style="color:var(--danger); border-color:var(--danger); flex-shrink:0;">Clear</button>
+          <button type="button" class="btn" id="btn-clear-data"
+                  style="color:var(--danger); border-color:var(--danger); flex-shrink:0;">Clear</button>
         </div>
       </div>
     `;
@@ -111,8 +109,8 @@ const uiSettings = {
     document.getElementById('import-btn').addEventListener('click', async () => {
       await sync.importFromGitHub();
     });
-    document.getElementById('btn-add-ref').addEventListener('click', () => this.openAddRef());
-    document.getElementById('btn-browse-refs').addEventListener('click', () => this.openBrowseRefs());
+    document.getElementById('btn-add-ref').addEventListener('click',    () => this.openAddRef());
+    document.getElementById('btn-browse-refs').addEventListener('click',() => this.openBrowseRefs());
     document.getElementById('btn-clear-data').addEventListener('click', () => {
       if (confirm('This will permanently delete all local entries, references, tags and settings.\n\nThis cannot be undone. Are you sure?')) {
         localStorage.clear();
@@ -165,8 +163,7 @@ const uiSettings = {
                    + Object.values(storage.getAllRefs()).filter(r => !!r.editable).length;
     if (last) {
       const d = new Date(last);
-      const dateStr = d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
-      return `Last: ${dateStr} · ${unsynced} unsynced`;
+      return `Last: ${d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })} · ${unsynced} unsynced`;
     }
     return unsynced ? `${unsynced} unsynced` : 'Never exported';
   },
@@ -175,35 +172,32 @@ const uiSettings = {
   // --- Add new reference (modal) ---
 
   openAddRef() {
-    // Build form HTML for all ref types
+    // Reset source state for fresh form
+    this.sourceState = {};
+
     const typeButtons = this.refTypes.map(type => `
-      <button type="button" class="type-btn ${type === this.activeRefType ? 'active' : ''}" data-type="${type}">
+      <button type="button" class="type-btn ${type === this.activeRefType ? 'active' : ''}"
+              data-type="${type}">
         ${SCHEMAS.ref_types[type].label}<span class="draft-dot"></span>
       </button>
     `).join('');
 
-    const forms = this.refTypes.map(type => {
-      const fields = Object.keys(SCHEMAS.ref_types[type].fields).map(field => `
-        <div class="field">
-          <label>${field}</label>
-          <input type="text" name="${field}">
-        </div>
-      `).join('');
-      return `
-        <form id="ref-form-${type}" class="entry-form">
-          <div class="card form-card">${fields}</div>
-          <button type="button" class="save-btn" style="margin-top:0.75rem;">Save</button>
-          <p class="draft-indicator" id="ref-draft-${type}"></p>
-        </form>
-      `;
-    }).join('');
+    // Each ref form uses the ref type as its idPrefix
+    const forms = this.refTypes.map(type => `
+      <form id="ref-form-${type}" class="entry-form">
+        ${uiRefForm.buildRefFormHtml(type, type)}
+        <button type="button" class="save-btn" style="margin-top:0.75rem;">Save</button>
+        <p class="draft-indicator" id="ref-draft-${type}"></p>
+      </form>
+    `).join('');
 
     this.openModal('New Reference', `
-      <div id="ref-type-buttons" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1rem;">${typeButtons}</div>
+      <div id="ref-type-buttons" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1rem;">
+        ${typeButtons}
+      </div>
       <div id="ref-forms">${forms}</div>
     `);
 
-    // Show active form
     this.switchRefType(this.activeRefType);
 
     // Restore drafts and indicators
@@ -218,7 +212,7 @@ const uiSettings = {
       btn.addEventListener('click', () => this.switchRefType(btn.dataset.type));
     });
 
-    // Form handlers
+    // Form input / save / clear handlers
     this.refTypes.forEach(type => {
       const form = document.getElementById(`ref-form-${type}`);
       if (!form) return;
@@ -236,9 +230,6 @@ const uiSettings = {
     });
   },
 
-  // Secondary ref state per primary ref type
-  sourceState: {},
-
   switchRefType(type) {
     this.activeRefType = type;
     document.querySelectorAll('#ref-type-buttons .type-btn').forEach(btn => {
@@ -248,208 +239,51 @@ const uiSettings = {
       form.classList.toggle('active', form.id === `ref-form-${type}`);
     });
 
-    // Register "Published in" handlers if this is a primary ref type
-    if (this.primaryRefTypes.includes(type) && !this.sourceState[type]) {
+    // Initialise "Published in" state and handlers for primary ref types
+    if (uiRefForm.primaryRefTypes.includes(type) && !this.sourceState[type]) {
       this.sourceState[type] = { manual: false, selectedId: null };
-      this.registerPublishedInHandlers(type);
-    }
-  },
-
-  registerPublishedInHandlers(type) {
-    const state    = this.sourceState[type];
-    const toggle   = document.getElementById(`${type}-source-toggle`);
-    const saved    = document.getElementById(`${type}-source-saved`);
-    const manual   = document.getElementById(`${type}-source-manual`);
-    const search   = document.getElementById(`${type}-source-search`);
-    const dropdown = document.getElementById(`${type}-source-dropdown`);
-
-    if (!toggle) return;
-
-    // Toggle switch
-    toggle.addEventListener('click', () => {
-      state.manual = !state.manual;
-      toggle.classList.toggle('on', state.manual);
-      saved.style.display  = state.manual ? 'none'  : 'block';
-      manual.style.display = state.manual ? 'block' : 'none';
-      if (state.manual) this.buildSourceManualFields(type);
-      this.saveRefDraft(type);
-      this.updateRefDraftIndicator(type);
-    });
-
-    // Search input
-    search.addEventListener('focus', () => {
-      this.renderSourceDropdown(type, search.value);
-      dropdown.style.display = 'block';
-    });
-
-    search.addEventListener('input', () => {
-      state.selectedId = null;
-      document.querySelector(`#ref-form-${type} [name="source_id"]`).value = '';
-      this.renderSourceDropdown(type, search.value);
-      dropdown.style.display = 'block';
-    });
-
-    document.addEventListener('click', e => {
-      const field = document.getElementById(`${type}-published-in-field`);
-      if (field && !field.contains(e.target)) dropdown.style.display = 'none';
-    });
-
-    // Secondary ref type select
-    const typeSelect = document.getElementById(`${type}-source-type-select`);
-    if (typeSelect) {
-      typeSelect.addEventListener('change', () => this.buildSourceManualFields(type));
-    }
-  },
-
-  // Render dropdown for secondary ref search (book and other only)
-  renderSourceDropdown(type, query) {
-    const dropdown = document.getElementById(`${type}-source-dropdown`);
-    const allRefs  = Object.values(storage.getAllRefs())
-      .filter(r => this.secondaryRefTypes.includes(r.type));
-
-    const ranked = allRefs.map(ref => ({
-      ref,
-      label: refs.getLabel(ref),
-      score: this.matchScore(refs.getLabel(ref), query),
-    })).filter(({ score }) => score > 0 || !query)
-       .sort((a, b) => b.score - a.score);
-
-    const html = ranked.map(({ ref, label }) =>
-      `<div class="ref-option" data-id="${ref.id}"
-            data-label="${label.replace(/"/g, '&quot;')}">${this.escapeHtml(label)}</div>`
-    ).join('');
-
-    dropdown.innerHTML = html || '<div class="ref-no-results">No references found</div>';
-
-    dropdown.querySelectorAll('.ref-option').forEach(option => {
-      option.addEventListener('click', () => {
-        this.sourceState[type].selectedId = option.dataset.id;
-        document.getElementById(`${type}-source-search`).value = option.dataset.label;
-        document.querySelector(`#ref-form-${type} [name="source_id"]`).value = option.dataset.id;
-        dropdown.style.display = 'none';
+      uiRefForm.registerPublishedInHandlers(type, this.sourceState[type], () => {
+        this.saveRefDraft(type);
+        this.updateRefDraftIndicator(type);
       });
-    });
-  },
-
-  // Build manual fields for selected secondary ref type
-  buildSourceManualFields(type) {
-    const typeSelect = document.getElementById(`${type}-source-type-select`);
-    const refType    = typeSelect?.value || 'book';
-    const schema     = SCHEMAS.ref_types[refType];
-    const container  = document.getElementById(`${type}-source-manual-fields`);
-    if (!container) return;
-
-    container.innerHTML = Object.keys(schema.fields).map(field => `
-      <div class="field" style="margin-top:6px;">
-        <label style="font-size:12px; color:var(--muted);">${field}</label>
-        <input type="text" class="ref-manual-input" name="source_manual_${field}"
-               style="margin-top:2px;">
-      </div>
-    `).join('');
-  },
-
-  // Match score for source dropdown search
-  matchScore(label, query) {
-    if (!query) return 1;
-    const l = label.toLowerCase();
-    const q = query.toLowerCase();
-    if (!l.includes(q)) return 0;
-    if (l.startsWith(q)) return 4;
-    if (l.split(/\W+/).some(w => w.startsWith(q))) return 3;
-    return 1;
+    }
   },
 
   readRefForm(type) {
-    const form = document.getElementById(`ref-form-${type}`);
-    const data = {};
+    // Read primary fields via uiRefForm
+    const data = uiRefForm.readFormData(type, type);
 
-    form.querySelectorAll('input[name]').forEach(field => {
-      if (!field.name.startsWith('source_manual_')) {
-        data[field.name] = field.value.trim();
+    // Read "Published in" if applicable
+    if (uiRefForm.primaryRefTypes.includes(type) && this.sourceState[type]) {
+      const source = uiRefForm.readSourceForDraft(type, this.sourceState[type]);
+      if (source) {
+        if (typeof source === 'string') data.source_id   = source;
+        else                           data.source_text = refs.getLabel(source);
       }
-    });
+    }
 
     return data;
   },
 
-  // Read secondary ref value — for draft (never saves to ref store)
-  readSourceForDraft(type) {
-    const state = this.sourceState[type];
-    if (!state) return null;
-    if (!state.manual) return state.selectedId || null;
-
-    const typeSelect = document.getElementById(`${type}-source-type-select`);
-    const refType    = typeSelect?.value || 'book';
-    const schema     = SCHEMAS.ref_types[refType];
-    const container  = document.getElementById(`${type}-source-manual-fields`);
-    if (!schema || !container) return null;
-
-    const refData = { type: refType };
-    let hasContent = false;
-    Object.keys(schema.fields).forEach(field => {
-      const input = container.querySelector(`[name="source_manual_${field}"]`);
-      if (input && input.value.trim()) { refData[field] = input.value.trim(); hasContent = true; }
-    });
-    return hasContent ? refData : null;
-  },
-
-  // Read secondary ref value for saving — saves to ref store if checkbox checked
-  readSourceForSave(type) {
-    const state = this.sourceState[type];
-    if (!state) return null;
-    if (!state.manual) return state.selectedId || null;
-
-    const typeSelect = document.getElementById(`${type}-source-type-select`);
-    const refType    = typeSelect?.value || 'book';
-    const schema     = SCHEMAS.ref_types[refType];
-    const container  = document.getElementById(`${type}-source-manual-fields`);
-    if (!schema || !container) return null;
-
-    const refData = { type: refType };
-    let hasContent = false;
-    Object.keys(schema.fields).forEach(field => {
-      const input = container.querySelector(`[name="source_manual_${field}"]`);
-      if (input && input.value.trim()) { refData[field] = input.value.trim(); hasContent = true; }
-    });
-    if (!hasContent) return null;
-
-    const checkbox = document.getElementById(`${type}-source-save-checkbox`);
-    if (checkbox && checkbox.checked) {
-      const ref    = refs.createRef(refType, refData);
-      const result = refs.validateRef(ref);
-      if (result.valid) { storage.saveRef(ref); return ref.id; }
-    }
-    return refData;
-  },
-
   fillRefForm(type, data) {
-    const form = document.getElementById(`ref-form-${type}`);
-    if (!form) return;
-    form.querySelectorAll('input').forEach(field => {
-      if (data[field.name] !== undefined) field.value = data[field.name];
+    Object.entries(data).forEach(([key, value]) => {
+      const input = document.querySelector(`#ref-form-${type} [name="${type}_${key}"]`);
+      if (input) input.value = value;
     });
   },
 
   resetRefForm(type) {
     const form = document.getElementById(`ref-form-${type}`);
     if (!form) return;
-    form.querySelectorAll('input').forEach(field => { field.value = ''; });
-
-    // Reset secondary ref state
+    form.querySelectorAll('input').forEach(f => { f.value = ''; });
     if (this.sourceState[type]) {
-      this.sourceState[type] = { manual: false, selectedId: null };
-      const toggle = document.getElementById(`${type}-source-toggle`);
-      const saved  = document.getElementById(`${type}-source-saved`);
-      const manual = document.getElementById(`${type}-source-manual`);
-      if (toggle) toggle.classList.remove('on');
-      if (saved)  saved.style.display  = 'block';
-      if (manual) manual.style.display = 'none';
-      const fields = document.getElementById(`${type}-source-manual-fields`);
-      if (fields) fields.innerHTML = '';
+      uiRefForm.resetPublishedIn(type, this.sourceState[type]);
     }
   },
 
-  saveRefDraft(type) { storage.saveRefDraft(type, this.readRefForm(type)); },
+  saveRefDraft(type) {
+    storage.saveRefDraft(type, this.readRefForm(type));
+  },
 
   clearRefDraft(type) {
     storage.clearRefDraft(type);
@@ -473,11 +307,11 @@ const uiSettings = {
   },
 
   saveRef(type) {
-    const data = this.readRefForm(type);
+    const data = uiRefForm.readFormData(type, type);
 
-    // Attach secondary ref if present
-    if (this.primaryRefTypes.includes(type)) {
-      const source = this.readSourceForSave(type);
+    // Attach secondary ref if applicable
+    if (uiRefForm.primaryRefTypes.includes(type) && this.sourceState[type]) {
+      const source = uiRefForm.readSourceForSave(type, this.sourceState[type]);
       if (source) {
         if (typeof source === 'string') data.source_id   = source;
         else                           data.source_text = refs.getLabel(source);
@@ -499,7 +333,6 @@ const uiSettings = {
 
   openBrowseRefs() {
     const allRefs = storage.getRefsSortedByDate();
-
     const grouped = {};
     this.refTypes.forEach(type => { grouped[type] = []; });
     allRefs.forEach(ref => { if (grouped[ref.type]) grouped[ref.type].push(ref); });
@@ -524,9 +357,10 @@ const uiSettings = {
       `;
     }).join('');
 
-    this.openModal('References', allRefs.length === 0
-      ? '<div class="empty-message">No references yet.</div>'
-      : groupsHtml,
+    this.openModal('References',
+      allRefs.length === 0
+        ? '<div class="empty-message">No references yet.</div>'
+        : groupsHtml
     );
 
     document.querySelectorAll('.ref-row').forEach(row => {
@@ -538,12 +372,11 @@ const uiSettings = {
   },
 
   openRefDetail(ref) {
-    const skip    = ['id', 'created_at', 'type', 'editable']; // kept for safety
+    const skip    = ['id', 'created_at', 'type', 'editable'];
     const canEdit = !!ref.editable;
-
-    // Show only fields defined in the ref type schema, in schema order
-    const schema    = SCHEMAS.ref_types[ref.type];
+    const schema  = SCHEMAS.ref_types[ref.type];
     const fieldKeys = schema ? Object.keys(schema.fields) : [];
+
     const fieldsHtml = fieldKeys
       .filter(key => ref[key])
       .map(key => `
@@ -556,45 +389,41 @@ const uiSettings = {
     const typeLabel = SCHEMAS.ref_types[ref.type]?.label || ref.type;
     const date      = new Date(ref.created_at).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
 
-    // Populate and show the ref sheet (slides up over the browse modal)
     document.getElementById('ref-sheet-title').textContent = typeLabel;
     document.getElementById('ref-sheet-body').innerHTML = `
       <div style="font-size:12px; color:var(--muted); margin-bottom:0.75rem;">${date}</div>
-      <div class="card">${fieldsHtml}</div>
+      <div class="card" style="padding:0;">${fieldsHtml}</div>
     `;
 
     const footer    = document.getElementById('ref-sheet-footer');
     const deleteBtn = document.getElementById('ref-sheet-delete-btn');
     footer.style.display = canEdit ? 'block' : 'none';
 
-    // Re-register delete handler
     const newDeleteBtn = deleteBtn.cloneNode(true);
     deleteBtn.parentNode.replaceChild(newDeleteBtn, deleteBtn);
     newDeleteBtn.addEventListener('click', () => {
       storage.deleteRef(ref.id);
       showToast('Reference deleted');
       this.closeRefSheet();
-      this.openBrowseRefs(); // refresh browse modal
+      this.openBrowseRefs();
     });
 
     document.getElementById('ref-sheet-overlay').style.display = 'block';
-    document.getElementById('ref-sheet').style.display = 'block';
+    document.getElementById('ref-sheet').style.display         = 'block';
   },
 
   closeRefSheet() {
     document.getElementById('ref-sheet-overlay').style.display = 'none';
-    document.getElementById('ref-sheet').style.display = 'none';
+    document.getElementById('ref-sheet').style.display         = 'none';
   },
 
 
   // --- Helpers ---
 
   escapeHtml(str) {
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   },
 
 };
