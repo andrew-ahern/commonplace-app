@@ -5,7 +5,7 @@
    on all devices next time they load the app online.
    ============================================================ */
 
-const CACHE_NAME = 'cb-v7';
+const CACHE_NAME = 'cb-v10';
 
 const APP_SHELL = [
   './index.html',
@@ -20,6 +20,7 @@ const APP_SHELL = [
   './js/entries.js',
   './js/refs.js',
   './js/sync.js',
+  './js/ui.refform.js',
   './js/ui.newentry.js',
   './js/ui.browse.js',
   './js/ui.settings.js',
