@@ -5,7 +5,7 @@
    on all devices next time they load the app online.
    ============================================================ */
 
-const CACHE_NAME = 'cb-v6';
+const CACHE_NAME = 'cb-v7';
 
 const APP_SHELL = [
   './index.html',
