@@ -105,6 +105,8 @@ const uiNewEntry = {
       document.getElementById(`${type}-ref-saved`).style.display  = state.manual ? 'none'  : 'block';
       document.getElementById(`${type}-ref-manual`).style.display = state.manual ? 'block' : 'none';
       if (state.manual) this.buildManualRefFields(type);
+      this.saveDraft(type);
+      this.updateDraftIndicator(type);
     });
 
     // Saved ref search

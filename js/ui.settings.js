@@ -272,6 +272,8 @@ const uiSettings = {
       saved.style.display  = state.manual ? 'none'  : 'block';
       manual.style.display = state.manual ? 'block' : 'none';
       if (state.manual) this.buildSourceManualFields(type);
+      this.saveRefDraft(type);
+      this.updateRefDraftIndicator(type);
     });
 
     // Search input
